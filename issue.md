@@ -1,61 +1,28 @@
-# Planning: Setup Awal Supabase Backend
+# Plan: Implement Supabase Authentication
 
-## Konteks
-Task ini dikerjakan pada branch `feature/setup-supabase` dan bertujuan untuk melakukan setup serta inisialisasi awal backend menggunakan Supabase di dalam aplikasi Flutter. Mengacu pada `.agents/rules/supabase_schema.md`, proyek ini adalah aplikasi Point of Sales (POS) yang akan memiliki berbagai tabel seperti `products`, `customers`, dan `transactions`. Setup awal klien Supabase merupakan pondasi agar aplikasi dapat mulai berinteraksi dengan database tersebut.
+**Branch:** `feature/#2-auth-and-rls`
 
-## Langkah-langkah Implementasi
+Tolong implementasikan sistem Authentication lengkap menggunakan Supabase. Lakukan langkah-langkah berikut secara berurutan:
 
-### 1. Penambahan Dependensi
-- Modifikasi file `pubspec.yaml`.
-- Tambahkan library `supabase_flutter` versi terbaru di bawah bagian `dependencies:`.
+- [ ] **1. Setup Dependencies**
+  - Tambahkan package `flutter_bloc` dan `shared_preferences` ke `pubspec.yaml`.
+  - Jalankan `flutter pub get`.
 
-### 2. Instalasi Dependensi
-- Melalui terminal terintegrasi di dalam proyek, jalankan perintah:
-  ```bash
-  flutter pub get
-  ```
-- Pastikan proses pengambilan dependensi berjalan dengan sukses dan tidak ada konflik versi.
+- [ ] **2. Auth Repository**
+  - Buat file `lib/data/repositories/auth_repository.dart`.
+  - Isi dengan kelas `AuthRepository` yang memiliki fungsi `signIn`, `signUp`, dan `signOut`.
+  - **PENTING UNTUK SIGN UP:** Fungsi `signUp` harus menerima parameter `email`, `password`, `fullName`, dan `storeName`. Saat memanggil `supabase.auth.signUp()`, masukkan `fullName` dan `storeName` ke dalam parameter `data` (sebagai metadata) agar trigger database dapat menangkapnya.
 
-### 3. Pembuatan Klien Supabase (`lib/core/supabase_client.dart`)
-- Buat direktori baru `core` di dalam folder `lib/` jika belum ada.
-- Buat file `supabase_client.dart` di dalam `lib/core/`.
-- Buat fungsi/kelas inisialisasi yang memanggil `Supabase.initialize(...)`.
-- Gunakan placeholder untuk kredensial Supabase. Contoh:
-  ```dart
-  import 'package:supabase_flutter/supabase_flutter.dart';
+- [ ] **3. State Management (Auth Cubit)**
+  - Buat file `lib/logic/auth/auth_cubit.dart` (beserta `auth_state.dart`) untuk me-manage state autentikasi.
+  - Gunakan `SharedPreferences` untuk menyimpan token/status login lokal.
 
-  class SupabaseConfig {
-    // TODO: Ganti dengan URL dan Anon Key dari dashboard Supabase
-    static const String supabaseUrl = 'https://pjimlzfwfeqlgilcnqlg.supabase.co';
-    static const String supabaseAnonKey = 'sb_publishable_Y9-e3MXPw3IdvTgMf2EO7A_j3LD73ys';
+- [ ] **4. Auth UI Screens**
+  - Buat 3 halaman UI di dalam folder `lib/presentation/auth/`:
+    - `login_screen.dart`
+    - `register_screen.dart`
+    - `forgot_password_screen.dart`
+  - **PENTING:** Pada `register_screen.dart`, tambahkan `TextField` wajib untuk **'Nama Lengkap'** dan **'Nama Toko'** selain email dan password.
 
-    static Future<void> init() async {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        anonKey: supabaseAnonKey,
-      );
-    }
-  }
-  ```
-
-### 4. Modifikasi `main.dart`
-- Buka `lib/main.dart`.
-- Ubah fungsi `main()` agar mendukung eksekusi asynchronous:
-  ```dart
-  void main() async {
-    // Diperlukan agar binding framework flutter siap sebelum memanggil async function
-    WidgetsFlutterBinding.ensureInitialized();
-    
-    // Inisialisasi Supabase
-    await SupabaseConfig.init();
-    
-    runApp(const MyApp()); // Sesuaikan dengan nama root widget
-  }
-  ```
-
-## Kriteria Penerimaan (Acceptance Criteria)
-- [ ] Dependensi `supabase_flutter` terdaftar di `pubspec.yaml`.
-- [ ] Instalasi paket (`flutter pub get`) berhasil tanpa error.
-- [ ] File `lib/core/supabase_client.dart` berisi kode inisialisasi Supabase dengan placeholder `SUPABASE_URL` dan `SUPABASE_ANON_KEY`.
-- [ ] Fungsi `main()` di `lib/main.dart` telah dijadikan asynchronous, memanggil `WidgetsFlutterBinding.ensureInitialized()`, dan menjalankan inisialisasi Supabase sebelum `runApp`.
-- [ ] Source code tidak memiliki error kompilasi/analisa statik (dapat dijalankan dengan lancar).
+- [ ] **5. Dependency Injection**
+  - Daftarkan `AuthRepository` dan `AuthCubit` di `lib/main.dart` menggunakan `MultiRepositoryProvider` dan `MultiBlocProvider`.
