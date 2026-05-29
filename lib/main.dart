@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/supabase_client.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/product_repository.dart';
+import 'data/repositories/stock_mutation_repository.dart';
 import 'logic/auth/auth_cubit.dart';
 import 'logic/auth/auth_state.dart';
+import 'logic/inventory/stock_mutation_cubit.dart';
 import 'logic/product/product_cubit.dart';
 import 'presentation/auth/login_screen.dart';
 import 'presentation/product/product_list_screen.dart';
@@ -33,6 +35,9 @@ class MyApp extends StatelessWidget {
         RepositoryProvider<ProductRepository>(
           create: (_) => ProductRepository(),
         ),
+        RepositoryProvider<StockMutationRepository>(
+          create: (_) => StockMutationRepository(),
+        ),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -45,6 +50,13 @@ class MyApp extends StatelessWidget {
           BlocProvider<ProductCubit>(
             create: (context) => ProductCubit(
               productRepository: context.read<ProductRepository>(),
+            ),
+          ),
+          BlocProvider<StockMutationCubit>(
+            create: (context) => StockMutationCubit(
+              productRepository: context.read<ProductRepository>(),
+              stockMutationRepository:
+                  context.read<StockMutationRepository>(),
             ),
           ),
         ],
