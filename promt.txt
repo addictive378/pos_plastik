@@ -1,22 +1,38 @@
-buat issue.md, untuk planing membuat ini:
-Tolong buatkan fitur Manajemen Produk (CRUD) dan Multi-Satuan. Gunakan supabase_flutter dan arsitektur BLoC/Cubit. Lakukan langkah berikut:
+buat issue-supplier-restock.md, untuk planing membuat ini:
+Tolong buatkan fitur Stok Masuk dari Supplier (Purchase) menggunakan flutter_bloc berdasarkan skema di .agents/rules/supabase_schema.md.
 
-    Buat Model: Buat ProductModel dan ProductUnitModel berdasarkan skema database di .agents/rules/supabase_schema.md.
+Lakukan urutan berikut:
 
-    Buat Repository: Buat ProductRepository (lib/data/repositories/product_repository.dart) yang memiliki fungsi getProducts, createProduct, updateProduct, dan deleteProduct.
+    Model & Repository: Buat StockMutationModel dan StockMutationRepository. Repository hanya butuh fungsi createPurchaseMutation() untuk melakukan insert ke tabel stock_mutations. Jangan buat fungsi update ke tabel products karena sudah di-handle oleh trigger database.
 
-        Penting: Saat createProduct, insert dulu ke tabel products (sertakan owner_id dari user auth saat ini). Ambil id produk yang baru terbuat, lalu gunakan id tersebut untuk insert data ke tabel product_units secara batch.
+    State Management: Buat StockMutationCubit (dan state-nya) untuk mengontrol form input.
 
-    Buat State Management: Buat ProductCubit untuk me-manage state daftar produk (Loading, Loaded, Error) dan fitur search/filter aktif/non-aktif.
+    UI Form (lib/presentation/inventory/restock_screen.dart):
 
-    Buat UI List: Buat lib/presentation/product/product_list_screen.dart. Tampilkan daftar produk, search bar, dan filter.
+        Buat dropdown/search untuk memilih Produk (Product).
 
-    Buat UI Form (Kompleks): Buat lib/presentation/product/add_product_screen.dart.
+        Saat produk dipilih, tampilkan field Read-Only berisi harga_modal_terakhir dan current_stock saat ini.
 
-        Field utama: Nama, SKU, harga_modal_terakhir, dan harga_jual_min.
+        Buat dropdown untuk memilih Satuan (ProductUnit) dari produk tersebut.
 
-        Sub-form dinamis: List input untuk satuan (Product Units).
+        Buat input qty_original (jumlah barang masuk). Validasi: Harus angka positif.
 
-        Validasi Wajib: Minimal harus ada 1 satuan yang diset sebagai Base Unit (is_base_unit = true, conversion_to_base = 1).
+        Buat input harga_modal_baru (harga beli dari supplier saat ini).
 
-Pastikan UI-nya responsif, clean, dan form dapat menambah/menghapus satuan secara dinamis sebelum di-submit ke Supabase."
+    Logika Kalkulasi Sebelum Insert:
+
+        qty_in_base = qty_original * conversion_to_base dari satuan yang dipilih.
+
+        mutation_type = 'purchase'.
+
+        unit_name_snapshot = unit_name dari satuan yang dipilih.
+
+        harga_modal_lama = harga_modal_terakhir dari produk terpilih.
+
+    Logika UX Pop-up Harga (PENTING):
+
+        Saat tombol Submit ditekan, bandingkan harga. Jika harga_modal_baru > harga_modal_terakhir, jangan langsung insert. Munculkan Dialog Pop-up: "Harga modal naik! Stok akan ditambahkan, namun apakah Anda ingin meninjau ulang Harga Jual sekarang?".
+
+        Jika user klik "Ya", lakukan insert mutasi lalu navigasikan ke halaman edit produk. Jika "Tidak", lakukan insert mutasi dan tutup halaman.
+
+Pastikan desainnya rapi dan error handling (misal form kosong) tertangani."

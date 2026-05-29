@@ -5,6 +5,7 @@ import '../../logic/product/product_cubit.dart';
 import '../../logic/product/product_state.dart';
 import '../../data/models/product_model.dart';
 import 'add_product_screen.dart';
+import '../inventory/restock_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -191,8 +192,28 @@ class _ProductCard extends StatelessWidget {
             ])),
             PopupMenuButton<String>(
               icon: Icon(Icons.more_vert, color: cs.onSurface.withOpacity(0.5)),
-              onSelected: (v) { if (v == 'delete') _confirmDelete(context); },
-              itemBuilder: (_) => [const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 8), Text('Hapus')]))],
+              onSelected: (v) {
+                if (v == 'delete') _confirmDelete(context);
+                if (v == 'restock') _navigateToRestock(context);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'restock',
+                  child: Row(children: [
+                    Icon(Icons.add_shopping_cart_outlined, color: Colors.teal, size: 20),
+                    SizedBox(width: 8),
+                    Text('Tambah Stok (Restock)'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                    SizedBox(width: 8),
+                    Text('Hapus'),
+                  ]),
+                ),
+              ],
             ),
           ]),
         ),
@@ -215,5 +236,17 @@ class _ProductCard extends StatelessWidget {
         ),
       ],
     ));
+  }
+
+  Future<void> _navigateToRestock(BuildContext context) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RestockScreen(initialProduct: product),
+      ),
+    );
+    if (result == true && context.mounted) {
+      context.read<ProductCubit>().loadProducts();
+    }
   }
 }
