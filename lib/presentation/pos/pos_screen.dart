@@ -391,6 +391,7 @@ class _PosScreenState extends State<PosScreen> {
                       style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact),
                     ),
+                ],
               ),
             ),
             Padding(
