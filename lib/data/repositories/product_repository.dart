@@ -122,44 +122,47 @@ class ProductRepository {
         .update(product.toUpdateJson())
         .eq('id', productId);
 
-    // Step 2: Delete old price rules and units
-    await _client.from('product_prices').delete().eq('product_id', productId);
-    await _client.from('product_units').delete().eq('product_id', productId);
+    // Step 2: Fetch existing units for this product
+    final existingUnitsResponse = await _client
+        .from('product_units')
+        .select()
+        .eq('product_id', productId);
 
-    // Step 3: Insert new units and select back with IDs
-    List<dynamic> insertedUnits = [];
-    if (units.isNotEmpty) {
-      final unitsJson =
-          units.map((u) => u.toInsertJson(productId)).toList();
-      insertedUnits = await _client
+    final existingUnits = (existingUnitsResponse as List<dynamic>)
+        .map((json) => ProductUnitModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    final existingIds = existingUnits.map((u) => u.id).whereType<String>().toSet();
+    final uiIds = units.map((u) => u.id).whereType<String>().toSet();
+
+    // Units to delete: exist in DB but not in the UI list
+    final idsToDelete = existingIds.difference(uiIds);
+    if (idsToDelete.isNotEmpty) {
+      await _client
           .from('product_units')
-          .insert(unitsJson)
-          .select();
+          .delete()
+          .inFilter('id', idsToDelete.toList());
     }
 
-    // Step 4: Insert new price rules
-    if (priceRules.isNotEmpty && insertedUnits.isNotEmpty) {
-      final pricesJson = priceRules.map((rule) {
-        final matchingUnit = insertedUnits.firstWhere(
-          (u) => (u['unit_name'] as String).toLowerCase() ==
-              (rule['unit_name'] as String).toLowerCase(),
-          orElse: () => null,
-        );
-        final unitId = matchingUnit != null ? matchingUnit['id'] : null;
-
-        return {
-          'product_id': productId,
-          'unit_id': unitId,
-          'price_type': rule['price_type'],
-          'min_qty': rule['min_qty'],
-          'customer_level': rule['customer_level'],
-          'harga_jual': rule['harga_jual'],
-          'is_active': rule['is_active'] ?? true,
-        };
-      }).where((p) => p['unit_id'] != null).toList();
-
-      if (pricesJson.isNotEmpty) {
-        await _client.from('product_prices').insert(pricesJson);
+    // Units to insert or update
+    for (final u in units) {
+      if (u.id != null && existingIds.contains(u.id)) {
+        // Update existing unit details
+        await _client
+            .from('product_units')
+            .update({
+              'unit_name': u.unitName,
+              'conversion_to_base': u.conversionToBase,
+              'is_base_unit': u.isBaseUnit,
+              'is_purchasable': u.isPurchasable,
+              'is_sellable': u.isSellable,
+            })
+            .eq('id', u.id!);
+      } else {
+        // Insert new unit
+        await _client
+            .from('product_units')
+            .insert(u.toInsertJson(productId));
       }
     }
 

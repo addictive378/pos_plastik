@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/models/product_model.dart';
-import '../../data/models/product_price_model.dart';
 import '../../data/models/product_unit_model.dart';
 import '../../data/repositories/product_repository.dart';
 import '../../logic/product/product_cubit.dart';
@@ -368,6 +367,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         for (final p in prices) {
           final unitName = _getUnitName(p.unitId);
           _priceEntries.add(_PriceEntry(
+            id: p.id,
             unitName: unitName,
             priceType: p.priceType,
             minQty: p.minQty,
@@ -476,6 +476,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> _deleteSpecialPrice(int index) async {
     final cs = Theme.of(context).colorScheme;
+    final repo = context.read<ProductRepository>();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -493,11 +494,33 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
-    setState(() {
-      _priceEntries.removeAt(index);
-    });
-    _showSnackBar('Aturan harga dihapus dari memori (Simpan produk untuk menerapkan ke database)');
+    if (_isEditing) {
+      final priceId = _priceEntries[index].id;
+      if (priceId != null) {
+        setState(() => _isLoadingPrices = true);
+        try {
+          await repo.deleteProductPrice(priceId);
+          _showSnackBar('Aturan harga berhasil dihapus dari database.');
+          await _loadSpecialPrices();
+        } catch (e) {
+          _showSnackBar('Gagal menghapus aturan harga: ${e.toString()}');
+        } finally {
+          if (mounted) {
+            setState(() => _isLoadingPrices = false);
+          }
+        }
+      } else {
+        setState(() {
+          _priceEntries.removeAt(index);
+        });
+      }
+    } else {
+      setState(() {
+        _priceEntries.removeAt(index);
+      });
+    }
   }
 
   void _showAddSpecialPriceDialog() {
@@ -512,6 +535,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       return;
     }
 
+    final units = _unitEntries.map((e) => e.toModel()).toList();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -520,12 +545,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ),
       builder: (ctx) {
         return _AddPriceBottomSheet(
+          units: units,
           unitNames: availableUnits,
-          onSaved: (_PriceEntry entry) {
+          productId: widget.product?.id,
+          onSavedLocal: (_PriceEntry entry) {
             setState(() {
               _priceEntries.add(entry);
             });
             Navigator.pop(ctx);
+          },
+          onSavedDb: () {
+            Navigator.pop(ctx);
+            _loadSpecialPrices();
           },
         );
       },
@@ -535,6 +566,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
 /// Helper class to hold controllers for each dynamic unit entry.
 class _UnitEntry {
+  final String? id;
   final TextEditingController nameCtrl;
   final TextEditingController convCtrl;
   bool isBaseUnit;
@@ -542,6 +574,7 @@ class _UnitEntry {
   bool isSellable;
 
   _UnitEntry({
+    this.id,
     String name = '',
     double conversion = 1,
     this.isBaseUnit = false,
@@ -553,6 +586,7 @@ class _UnitEntry {
 
   factory _UnitEntry.fromModel(ProductUnitModel m) {
     return _UnitEntry(
+      id: m.id,
       name: m.unitName,
       conversion: m.conversionToBase,
       isBaseUnit: m.isBaseUnit,
@@ -563,6 +597,7 @@ class _UnitEntry {
 
   ProductUnitModel toModel() {
     return ProductUnitModel(
+      id: id,
       unitName: nameCtrl.text.trim(),
       conversionToBase: isBaseUnit ? 1 : (double.tryParse(convCtrl.text.trim()) ?? 1),
       isBaseUnit: isBaseUnit,
@@ -578,6 +613,7 @@ class _UnitEntry {
 }
 
 class _PriceEntry {
+  final String? id;
   final String unitName;
   final String priceType;
   final int minQty;
@@ -585,6 +621,7 @@ class _PriceEntry {
   final double hargaJual;
 
   _PriceEntry({
+    this.id,
     required this.unitName,
     required this.priceType,
     this.minQty = 1,
@@ -594,6 +631,7 @@ class _PriceEntry {
 
   Map<String, dynamic> toJson() {
     return {
+      if (id != null) 'id': id,
       'unit_name': unitName,
       'price_type': priceType,
       'min_qty': minQty,
@@ -605,12 +643,18 @@ class _PriceEntry {
 }
 
 class _AddPriceBottomSheet extends StatefulWidget {
+  final List<ProductUnitModel> units;
   final List<String> unitNames;
-  final ValueChanged<_PriceEntry> onSaved;
+  final String? productId;
+  final ValueChanged<_PriceEntry> onSavedLocal;
+  final VoidCallback onSavedDb;
 
   const _AddPriceBottomSheet({
+    required this.units,
     required this.unitNames,
-    required this.onSaved,
+    this.productId,
+    required this.onSavedLocal,
+    required this.onSavedDb,
   });
 
   @override
@@ -619,6 +663,7 @@ class _AddPriceBottomSheet extends StatefulWidget {
 
 class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
   final _formKey = GlobalKey<FormState>();
+  bool _isSaving = false;
 
   late String _selectedUnitName;
   String _priceType = 'qty_based'; // 'qty_based' or 'customer_level'
@@ -640,27 +685,66 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final entry = _PriceEntry(
-      unitName: _selectedUnitName,
-      priceType: _priceType,
-      minQty: _priceType == 'qty_based'
-          ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
-          : 1,
-      customerLevel: _priceType == 'customer_level'
-          ? _selectedCustomerLevel
-          : null,
-      hargaJual: double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
-    );
+    if (widget.productId != null) {
+      final sm = ScaffoldMessenger.of(context);
+      // Direct INSERT to Supabase (Edit Mode)
+      setState(() => _isSaving = true);
+      try {
+        final repo = context.read<ProductRepository>();
+        final unit = widget.units.firstWhere(
+          (u) => u.unitName == _selectedUnitName,
+          orElse: () => throw Exception('Satuan tidak ditemukan'),
+        );
 
-    widget.onSaved(entry);
+        if (unit.id == null) {
+          throw Exception('Satuan "$_selectedUnitName" belum disimpan ke database. Silakan klik "Simpan Perubahan" pada produk terlebih dahulu.');
+        }
+
+        final data = {
+          'product_id': widget.productId,
+          'unit_id': unit.id,
+          'price_type': _priceType,
+          'min_qty': _priceType == 'qty_based'
+              ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
+              : 1,
+          'customer_level': _priceType == 'customer_level'
+               ? _selectedCustomerLevel
+               : null,
+          'harga_jual': double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
+          'is_active': true,
+        };
+
+        await repo.addProductPrice(data);
+        widget.onSavedDb();
+      } catch (e) {
+        sm.showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: ${e.toString()}')),
+        );
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
+      }
+    } else {
+      // Local Save (Create Mode)
+      final entry = _PriceEntry(
+        unitName: _selectedUnitName,
+        priceType: _priceType,
+        minQty: _priceType == 'qty_based'
+            ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
+            : 1,
+        customerLevel: _priceType == 'customer_level'
+            ? _selectedCustomerLevel
+            : null,
+        hargaJual: double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
+      );
+      widget.onSavedLocal(entry);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom + 16,
@@ -796,12 +880,18 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
 
               // Button Simpan
               FilledButton(
-                onPressed: _save,
+                onPressed: _isSaving ? null : _save,
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
             ],
