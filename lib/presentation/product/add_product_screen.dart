@@ -4,7 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/models/product_model.dart';
+import '../../data/models/product_price_model.dart';
 import '../../data/models/product_unit_model.dart';
+import '../../data/repositories/product_repository.dart';
 import '../../logic/product/product_cubit.dart';
 
 /// Screen for creating or editing a product with dynamic product-unit sub-forms.
@@ -32,6 +34,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // ── Dynamic unit entries ──
   final List<_UnitEntry> _unitEntries = [];
 
+  List<ProductPriceModel> _specialPrices = [];
+  bool _isLoadingPrices = false;
+
   bool get _isEditing => widget.product != null;
 
   @override
@@ -53,6 +58,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } else {
       // Start with one empty base-unit row.
       _unitEntries.add(_UnitEntry(isBaseUnit: true));
+    }
+
+    if (_isEditing) {
+      _loadSpecialPrices();
     }
   }
 
@@ -210,6 +219,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
+            _buildSpecialPricesSection(cs),
             const SizedBox(height: 32),
 
             // Submit button
@@ -338,6 +348,177 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ),
     );
   }
+
+  // ── Special Prices ──
+
+  Future<void> _loadSpecialPrices() async {
+    if (!_isEditing) return;
+    setState(() => _isLoadingPrices = true);
+    try {
+      final repo = context.read<ProductRepository>();
+      final prices = await repo.getProductPrices(widget.product!.id!);
+      setState(() {
+        _specialPrices = prices;
+      });
+    } catch (e) {
+      _showSnackBar('Gagal memuat harga khusus: ${e.toString()}');
+    } finally {
+      setState(() => _isLoadingPrices = false);
+    }
+  }
+
+  String _getUnitName(String unitId) {
+    if (widget.product != null) {
+      for (final u in widget.product!.units) {
+        if (u.id == unitId) return u.unitName;
+      }
+    }
+    return 'Satuan';
+  }
+
+  String _formatMoney(double val) {
+    return val.toStringAsFixed(0).replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.');
+  }
+
+  Widget _buildSpecialPricesSection(ColorScheme cs) {
+    if (!_isEditing) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        _sectionLabel('Harga Khusus (Grosir & Agen)'),
+        const SizedBox(height: 12),
+        if (_isLoadingPrices)
+          const Center(child: CircularProgressIndicator())
+        else if (_specialPrices.isEmpty)
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: cs.primary),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Belum ada harga khusus untuk produk ini.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ..._specialPrices.map((price) => _buildSpecialPriceCard(price, cs)),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _showAddSpecialPriceDialog,
+          icon: const Icon(Icons.add),
+          label: const Text('Tambah Harga Khusus'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpecialPriceCard(ProductPriceModel price, ColorScheme cs) {
+    final unitName = _getUnitName(price.unitId);
+    final isQtyBased = price.priceType == 'qty_based';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: cs.primaryContainer,
+          child: Icon(
+            isQtyBased ? Icons.shopping_bag_outlined : Icons.person_outline,
+            color: cs.onPrimaryContainer,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          isQtyBased
+              ? 'Min. Beli ${price.minQty} $unitName'
+              : 'Level ${price.customerLevel?.toUpperCase()}',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        subtitle: Text(
+          'Harga: Rp ${_formatMoney(price.hargaJual)} / $unitName',
+          style: TextStyle(color: cs.primary, fontSize: 13, fontWeight: FontWeight.w500),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline, color: cs.error),
+          onPressed: () => _deleteSpecialPrice(price.id!),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteSpecialPrice(String priceId) async {
+    final cs = Theme.of(context).colorScheme;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus Aturan Harga'),
+        content: const Text('Apakah Anda yakin ingin menghapus aturan harga khusus ini?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: cs.error),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoadingPrices = true);
+    try {
+      final repo = context.read<ProductRepository>();
+      await repo.deleteProductPrice(priceId);
+      _showSnackBar('Aturan harga khusus berhasil dihapus');
+      _loadSpecialPrices();
+    } catch (e) {
+      _showSnackBar('Gagal menghapus: ${e.toString()}');
+      setState(() => _isLoadingPrices = false);
+    }
+  }
+
+  void _showAddSpecialPriceDialog() {
+    final units = widget.product?.units ?? [];
+
+    if (units.isEmpty) {
+      _showSnackBar('Produk ini belum memiliki satuan.');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return _AddPriceBottomSheet(
+          units: units,
+          productId: widget.product!.id!,
+          onSaved: () {
+            Navigator.pop(ctx);
+            _loadSpecialPrices();
+          },
+        );
+      },
+    );
+  }
 }
 
 /// Helper class to hold controllers for each dynamic unit entry.
@@ -381,5 +562,235 @@ class _UnitEntry {
   void dispose() {
     nameCtrl.dispose();
     convCtrl.dispose();
+  }
+}
+
+class _AddPriceBottomSheet extends StatefulWidget {
+  final List<ProductUnitModel> units;
+  final String productId;
+  final VoidCallback onSaved;
+
+  const _AddPriceBottomSheet({
+    required this.units,
+    required this.productId,
+    required this.onSaved,
+  });
+
+  @override
+  State<_AddPriceBottomSheet> createState() => _AddPriceBottomSheetState();
+}
+
+class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
+  final _formKey = GlobalKey<FormState>();
+  bool _isSaving = false;
+
+  late String _selectedUnitId;
+  String _priceType = 'qty_based'; // 'qty_based' or 'customer_level'
+  
+  final _minQtyCtrl = TextEditingController(text: '1');
+  final _hargaJualCtrl = TextEditingController();
+  String _selectedCustomerLevel = 'grosir'; // 'grosir', 'agen'
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedUnitId = widget.units.first.id!;
+  }
+
+  @override
+  void dispose() {
+    _minQtyCtrl.dispose();
+    _hargaJualCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final repo = context.read<ProductRepository>();
+      final data = {
+        'product_id': widget.productId,
+        'unit_id': _selectedUnitId,
+        'price_type': _priceType,
+        'min_qty': _priceType == 'qty_based'
+            ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
+            : 1,
+        'customer_level': _priceType == 'customer_level'
+            ? _selectedCustomerLevel
+            : null,
+        'harga_jual': double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
+        'is_active': true,
+      };
+
+      await repo.addProductPrice(data);
+      widget.onSaved();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal menyimpan harga: ${e.toString()}')),
+      );
+    } finally {
+      setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 16,
+        right: 16,
+        top: 16,
+      ),
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Tambah Harga Khusus',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const SizedBox(height: 12),
+
+              // Dropdown Satuan
+              DropdownButtonFormField<String>(
+                value: _selectedUnitId,
+                decoration: InputDecoration(
+                  labelText: 'Pilih Satuan',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                items: widget.units.map((u) {
+                  return DropdownMenuItem<String>(
+                    value: u.id,
+                    child: Text(u.unitName),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _selectedUnitId = val);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Dropdown Tipe Aturan
+              DropdownButtonFormField<String>(
+                value: _priceType,
+                decoration: InputDecoration(
+                  labelText: 'Tipe Aturan',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'qty_based',
+                    child: Text('Berdasarkan Jumlah Beli (Grosir Qty)'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'customer_level',
+                    child: Text('Berdasarkan Level Pembeli'),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() => _priceType = val);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Conditional fields
+              if (_priceType == 'qty_based') ...[
+                TextFormField(
+                  controller: _minQtyCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: 'Minimal Jumlah Beli (Qty)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Wajib diisi';
+                    final n = int.tryParse(v.trim());
+                    if (n == null || n < 1) return 'Harus minimal 1';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                DropdownButtonFormField<String>(
+                  value: _selectedCustomerLevel,
+                  decoration: InputDecoration(
+                    labelText: 'Level Pembeli',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'grosir', child: Text('Grosir')),
+                    DropdownMenuItem(value: 'agen', child: Text('Agen')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedCustomerLevel = val);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              // Harga Spesial
+              TextFormField(
+                controller: _hargaJualCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Harga Spesial',
+                  prefixText: 'Rp ',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return 'Wajib diisi';
+                  final n = double.tryParse(v.trim());
+                  if (n == null || n < 0) return 'Harus bernilai positif';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+
+              // Button Simpan
+              FilledButton(
+                onPressed: _isSaving ? null : _save,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

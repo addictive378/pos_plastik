@@ -117,6 +117,33 @@ class ProductRepository {
     await _client.from('products').delete().eq('id', productId);
   }
 
+  /// Fetch all special prices for a product.
+  Future<List<ProductPriceModel>> getProductPrices(String productId) async {
+    final response = await _client
+        .from('product_prices')
+        .select()
+        .eq('product_id', productId)
+        .order('created_at', ascending: true);
+    return (response as List<dynamic>)
+        .map((json) => ProductPriceModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Insert a new price rule.
+  Future<ProductPriceModel> addProductPrice(Map<String, dynamic> data) async {
+    final response = await _client
+        .from('product_prices')
+        .insert(data)
+        .select()
+        .single();
+    return ProductPriceModel.fromJson(response);
+  }
+
+  /// Delete a price rule by ID.
+  Future<void> deleteProductPrice(String priceId) async {
+    await _client.from('product_prices').delete().eq('id', priceId);
+  }
+
   /// Find the recommended price based on tiered pricing and customer level.
   double getRecommendedPrice(
     ProductModel product,
