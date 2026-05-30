@@ -44,9 +44,11 @@ class ProductRepository {
   /// Create a new product and its associated units in two steps:
   /// 1. Insert into `products` → get back the new product id.
   /// 2. Batch-insert into `product_units` using the new product id.
+  /// Create a new product and its associated units and price rules.
   Future<ProductModel> createProduct({
     required ProductModel product,
     required List<ProductUnitModel> units,
+    List<Map<String, dynamic>> priceRules = const [],
   }) async {
     // Step 1: Insert product
     final productJson = product.toInsertJson();
@@ -60,11 +62,41 @@ class ProductRepository {
 
     final newProductId = productResponse['id'] as String;
 
-    // Step 2: Batch insert product units
+    // Step 2: Batch insert product units and select back with IDs
+    List<dynamic> insertedUnits = [];
     if (units.isNotEmpty) {
       final unitsJson =
           units.map((u) => u.toInsertJson(newProductId)).toList();
-      await _client.from('product_units').insert(unitsJson);
+      insertedUnits = await _client
+          .from('product_units')
+          .insert(unitsJson)
+          .select();
+    }
+
+    // Step 3: Batch insert product prices
+    if (priceRules.isNotEmpty && insertedUnits.isNotEmpty) {
+      final pricesJson = priceRules.map((rule) {
+        final matchingUnit = insertedUnits.firstWhere(
+          (u) => (u['unit_name'] as String).toLowerCase() ==
+              (rule['unit_name'] as String).toLowerCase(),
+          orElse: () => null,
+        );
+        final unitId = matchingUnit != null ? matchingUnit['id'] : null;
+
+        return {
+          'product_id': newProductId,
+          'unit_id': unitId,
+          'price_type': rule['price_type'],
+          'min_qty': rule['min_qty'],
+          'customer_level': rule['customer_level'],
+          'harga_jual': rule['harga_jual'],
+          'is_active': rule['is_active'] ?? true,
+        };
+      }).where((p) => p['unit_id'] != null).toList();
+
+      if (pricesJson.isNotEmpty) {
+        await _client.from('product_prices').insert(pricesJson);
+      }
     }
 
     // Re-fetch the product with units to return the complete object
@@ -77,12 +109,12 @@ class ProductRepository {
     return ProductModel.fromJson(completeProduct);
   }
 
-  /// Update an existing product and replace its units.
-  /// Deletes all old units, then inserts the new ones.
+  /// Update an existing product and replace its units and price rules.
   Future<ProductModel> updateProduct({
     required String productId,
     required ProductModel product,
     required List<ProductUnitModel> units,
+    List<Map<String, dynamic>> priceRules = const [],
   }) async {
     // Step 1: Update product row
     await _client
@@ -90,13 +122,45 @@ class ProductRepository {
         .update(product.toUpdateJson())
         .eq('id', productId);
 
-    // Step 2: Delete old units and insert new ones
+    // Step 2: Delete old price rules and units
+    await _client.from('product_prices').delete().eq('product_id', productId);
     await _client.from('product_units').delete().eq('product_id', productId);
 
+    // Step 3: Insert new units and select back with IDs
+    List<dynamic> insertedUnits = [];
     if (units.isNotEmpty) {
       final unitsJson =
           units.map((u) => u.toInsertJson(productId)).toList();
-      await _client.from('product_units').insert(unitsJson);
+      insertedUnits = await _client
+          .from('product_units')
+          .insert(unitsJson)
+          .select();
+    }
+
+    // Step 4: Insert new price rules
+    if (priceRules.isNotEmpty && insertedUnits.isNotEmpty) {
+      final pricesJson = priceRules.map((rule) {
+        final matchingUnit = insertedUnits.firstWhere(
+          (u) => (u['unit_name'] as String).toLowerCase() ==
+              (rule['unit_name'] as String).toLowerCase(),
+          orElse: () => null,
+        );
+        final unitId = matchingUnit != null ? matchingUnit['id'] : null;
+
+        return {
+          'product_id': productId,
+          'unit_id': unitId,
+          'price_type': rule['price_type'],
+          'min_qty': rule['min_qty'],
+          'customer_level': rule['customer_level'],
+          'harga_jual': rule['harga_jual'],
+          'is_active': rule['is_active'] ?? true,
+        };
+      }).where((p) => p['unit_id'] != null).toList();
+
+      if (pricesJson.isNotEmpty) {
+        await _client.from('product_prices').insert(pricesJson);
+      }
     }
 
     // Re-fetch the complete product

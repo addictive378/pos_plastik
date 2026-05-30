@@ -34,7 +34,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   // ── Dynamic unit entries ──
   final List<_UnitEntry> _unitEntries = [];
 
-  List<ProductPriceModel> _specialPrices = [];
+  final List<_PriceEntry> _priceEntries = [];
   bool _isLoadingPrices = false;
 
   bool get _isEditing => widget.product != null;
@@ -111,6 +111,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
 
       final units = _unitEntries.map((e) => e.toModel()).toList();
+      final priceRules = _priceEntries.map((e) => e.toJson()).toList();
       final cubit = context.read<ProductCubit>();
 
       if (_isEditing) {
@@ -118,9 +119,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           productId: widget.product!.id!,
           product: product,
           units: units,
+          priceRules: priceRules,
         );
       } else {
-        await cubit.createProduct(product: product, units: units);
+        await cubit.createProduct(
+          product: product,
+          units: units,
+          priceRules: priceRules,
+        );
       }
 
       if (mounted) Navigator.pop(context, true);
@@ -358,7 +364,17 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final repo = context.read<ProductRepository>();
       final prices = await repo.getProductPrices(widget.product!.id!);
       setState(() {
-        _specialPrices = prices;
+        _priceEntries.clear();
+        for (final p in prices) {
+          final unitName = _getUnitName(p.unitId);
+          _priceEntries.add(_PriceEntry(
+            unitName: unitName,
+            priceType: p.priceType,
+            minQty: p.minQty,
+            customerLevel: p.customerLevel,
+            hargaJual: p.hargaJual,
+          ));
+        }
       });
     } catch (e) {
       _showSnackBar('Gagal memuat harga khusus: ${e.toString()}');
@@ -382,8 +398,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   Widget _buildSpecialPricesSection(ColorScheme cs) {
-    if (!_isEditing) return const SizedBox.shrink();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -392,7 +406,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         const SizedBox(height: 12),
         if (_isLoadingPrices)
           const Center(child: CircularProgressIndicator())
-        else if (_specialPrices.isEmpty)
+        else if (_priceEntries.isEmpty)
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
@@ -412,7 +426,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           )
         else
-          ..._specialPrices.map((price) => _buildSpecialPriceCard(price, cs)),
+          ..._priceEntries.asMap().entries.map((entry) => _buildSpecialPriceCard(entry.key, entry.value, cs)),
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _showAddSpecialPriceDialog,
@@ -427,8 +441,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
-  Widget _buildSpecialPriceCard(ProductPriceModel price, ColorScheme cs) {
-    final unitName = _getUnitName(price.unitId);
+  Widget _buildSpecialPriceCard(int index, _PriceEntry price, ColorScheme cs) {
     final isQtyBased = price.priceType == 'qty_based';
 
     return Card(
@@ -445,23 +458,23 @@ class _AddProductScreenState extends State<AddProductScreen> {
         ),
         title: Text(
           isQtyBased
-              ? 'Min. Beli ${price.minQty} $unitName'
+              ? 'Min. Beli ${price.minQty} ${price.unitName}'
               : 'Level ${price.customerLevel?.toUpperCase()}',
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
         subtitle: Text(
-          'Harga: Rp ${_formatMoney(price.hargaJual)} / $unitName',
+          'Harga: Rp ${_formatMoney(price.hargaJual)} / ${price.unitName}',
           style: TextStyle(color: cs.primary, fontSize: 13, fontWeight: FontWeight.w500),
         ),
         trailing: IconButton(
           icon: Icon(Icons.delete_outline, color: cs.error),
-          onPressed: () => _deleteSpecialPrice(price.id!),
+          onPressed: () => _deleteSpecialPrice(index),
         ),
       ),
     );
   }
 
-  Future<void> _deleteSpecialPrice(String priceId) async {
+  Future<void> _deleteSpecialPrice(int index) async {
     final cs = Theme.of(context).colorScheme;
     final confirm = await showDialog<bool>(
       context: context,
@@ -481,23 +494,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (confirm != true) return;
 
-    setState(() => _isLoadingPrices = true);
-    try {
-      final repo = context.read<ProductRepository>();
-      await repo.deleteProductPrice(priceId);
-      _showSnackBar('Aturan harga khusus berhasil dihapus');
-      _loadSpecialPrices();
-    } catch (e) {
-      _showSnackBar('Gagal menghapus: ${e.toString()}');
-      setState(() => _isLoadingPrices = false);
-    }
+    setState(() {
+      _priceEntries.removeAt(index);
+    });
+    _showSnackBar('Aturan harga dihapus dari memori (Simpan produk untuk menerapkan ke database)');
   }
 
   void _showAddSpecialPriceDialog() {
-    final units = widget.product?.units ?? [];
+    final availableUnits = _unitEntries
+        .map((e) => e.nameCtrl.text.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList();
 
-    if (units.isEmpty) {
-      _showSnackBar('Produk ini belum memiliki satuan.');
+    if (availableUnits.isEmpty) {
+      _showSnackBar('Tambahkan minimal 1 Satuan Produk terlebih dahulu.');
       return;
     }
 
@@ -509,11 +520,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ),
       builder: (ctx) {
         return _AddPriceBottomSheet(
-          units: units,
-          productId: widget.product!.id!,
-          onSaved: () {
+          unitNames: availableUnits,
+          onSaved: (_PriceEntry entry) {
+            setState(() {
+              _priceEntries.add(entry);
+            });
             Navigator.pop(ctx);
-            _loadSpecialPrices();
           },
         );
       },
@@ -565,14 +577,39 @@ class _UnitEntry {
   }
 }
 
+class _PriceEntry {
+  final String unitName;
+  final String priceType;
+  final int minQty;
+  final String? customerLevel;
+  final double hargaJual;
+
+  _PriceEntry({
+    required this.unitName,
+    required this.priceType,
+    this.minQty = 1,
+    this.customerLevel,
+    required this.hargaJual,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'unit_name': unitName,
+      'price_type': priceType,
+      'min_qty': minQty,
+      'customer_level': customerLevel,
+      'harga_jual': hargaJual,
+      'is_active': true,
+    };
+  }
+}
+
 class _AddPriceBottomSheet extends StatefulWidget {
-  final List<ProductUnitModel> units;
-  final String productId;
-  final VoidCallback onSaved;
+  final List<String> unitNames;
+  final ValueChanged<_PriceEntry> onSaved;
 
   const _AddPriceBottomSheet({
-    required this.units,
-    required this.productId,
+    required this.unitNames,
     required this.onSaved,
   });
 
@@ -582,9 +619,8 @@ class _AddPriceBottomSheet extends StatefulWidget {
 
 class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
   final _formKey = GlobalKey<FormState>();
-  bool _isSaving = false;
 
-  late String _selectedUnitId;
+  late String _selectedUnitName;
   String _priceType = 'qty_based'; // 'qty_based' or 'customer_level'
   
   final _minQtyCtrl = TextEditingController(text: '1');
@@ -594,7 +630,7 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedUnitId = widget.units.first.id!;
+    _selectedUnitName = widget.unitNames.first;
   }
 
   @override
@@ -604,35 +640,22 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  void _save() {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isSaving = true);
-    try {
-      final repo = context.read<ProductRepository>();
-      final data = {
-        'product_id': widget.productId,
-        'unit_id': _selectedUnitId,
-        'price_type': _priceType,
-        'min_qty': _priceType == 'qty_based'
-            ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
-            : 1,
-        'customer_level': _priceType == 'customer_level'
-            ? _selectedCustomerLevel
-            : null,
-        'harga_jual': double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
-        'is_active': true,
-      };
+    final entry = _PriceEntry(
+      unitName: _selectedUnitName,
+      priceType: _priceType,
+      minQty: _priceType == 'qty_based'
+          ? (int.tryParse(_minQtyCtrl.text.trim()) ?? 1)
+          : 1,
+      customerLevel: _priceType == 'customer_level'
+          ? _selectedCustomerLevel
+          : null,
+      hargaJual: double.tryParse(_hargaJualCtrl.text.trim()) ?? 0,
+    );
 
-      await repo.addProductPrice(data);
-      widget.onSaved();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menyimpan harga: ${e.toString()}')),
-      );
-    } finally {
-      setState(() => _isSaving = false);
-    }
+    widget.onSaved(entry);
   }
 
   @override
@@ -670,20 +693,20 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
 
               // Dropdown Satuan
               DropdownButtonFormField<String>(
-                value: _selectedUnitId,
+                value: _selectedUnitName,
                 decoration: InputDecoration(
                   labelText: 'Pilih Satuan',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                items: widget.units.map((u) {
+                items: widget.unitNames.map((name) {
                   return DropdownMenuItem<String>(
-                    value: u.id,
-                    child: Text(u.unitName),
+                    value: name,
+                    child: Text(name),
                   );
                 }).toList(),
                 onChanged: (val) {
                   if (val != null) {
-                    setState(() => _selectedUnitId = val);
+                    setState(() => _selectedUnitName = val);
                   }
                 },
               ),
@@ -773,17 +796,11 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
 
               // Button Simpan
               FilledButton(
-                onPressed: _isSaving ? null : _save,
+                onPressed: _save,
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
                     : const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
