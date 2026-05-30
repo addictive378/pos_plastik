@@ -801,7 +801,7 @@ class _AddPriceBottomSheetState extends State<_AddPriceBottomSheet> {
                   minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                    : const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
+                child: const Text('Simpan Aturan Harga', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 16),
             ],
