@@ -6,11 +6,14 @@ import 'core/supabase_client.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/product_repository.dart';
 import 'data/repositories/stock_mutation_repository.dart';
+import 'data/repositories/transaction_repository.dart';
 import 'logic/auth/auth_cubit.dart';
 import 'logic/auth/auth_state.dart';
 import 'logic/inventory/stock_mutation_cubit.dart';
+import 'logic/pos/cart_cubit.dart';
 import 'logic/product/product_cubit.dart';
 import 'presentation/auth/login_screen.dart';
+import 'presentation/pos/pos_screen.dart';
 import 'presentation/product/product_list_screen.dart';
 
 void main() async {
@@ -38,6 +41,9 @@ class MyApp extends StatelessWidget {
         RepositoryProvider<StockMutationRepository>(
           create: (_) => StockMutationRepository(),
         ),
+        RepositoryProvider<TransactionRepository>(
+          create: (_) => TransactionRepository(),
+        ),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -59,6 +65,12 @@ class MyApp extends StatelessWidget {
                   context.read<StockMutationRepository>(),
             ),
           ),
+          BlocProvider<CartCubit>(
+            create: (context) => CartCubit(
+              transactionRepository:
+                  context.read<TransactionRepository>(),
+            ),
+          ),
         ],
         child: MaterialApp(
           title: 'POS Toko Plastik',
@@ -70,7 +82,7 @@ class MyApp extends StatelessWidget {
           home: BlocBuilder<AuthCubit, AuthState>(
             builder: (context, state) {
               if (state.status == AuthStatus.authenticated) {
-                return const ProductListScreen();
+                return const _DashboardScreen();
               }
               return const LoginScreen();
             },
@@ -80,4 +92,45 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+/// Simple bottom-navigation dashboard that houses the main app sections.
+class _DashboardScreen extends StatefulWidget {
+  const _DashboardScreen();
+
+  @override
+  State<_DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<_DashboardScreen> {
+  int _currentIndex = 0;
+
+  static const _screens = <Widget>[
+    PosScreen(),
+    ProductListScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.point_of_sale_outlined),
+            selectedIcon: Icon(Icons.point_of_sale),
+            label: 'Kasir',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: 'Produk',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 

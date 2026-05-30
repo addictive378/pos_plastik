@@ -1,4 +1,12 @@
-buat issue-supplier-restock.md, untuk planing membuat ini:
+buat issue-pos-kasir.md, untuk planing membuat ini:
+
+Tolong implementasikan fitur Sistem Kasir (Point of Sale) menggunakan flutter_bloc berdasarkan skema .agents/rules/supabase_schema.md.
+
+Lakukan langkah berikut secara berurutan:
+
+    Model: Buat CartItemModel (untuk state keranjang lokal), TransactionModel, dan TransactionItemModel.
+
+    State Management (CartCubit): Buat Cubit untuk mengatur keranjang. Fitur wajib:
 Tolong buatkan fitur Stok Masuk dari Supplier (Purchase) menggunakan flutter_bloc berdasarkan skema di .agents/rules/supabase_schema.md.
 
 Lakukan urutan berikut:
@@ -36,3 +44,30 @@ Lakukan urutan berikut:
         Jika user klik "Ya", lakukan insert mutasi lalu navigasikan ke halaman edit produk. Jika "Tidak", lakukan insert mutasi dan tutup halaman.
 
 Pastikan desainnya rapi dan error handling (misal form kosong) tertangani."
+        Tambah produk ke keranjang.
+
+        Pilih/ubah satuan (Unit) di dalam keranjang. Saat satuan diubah, otomatis kalkulasi harga_acuan_sistem.
+
+        Override Harga Manual: Kasir bisa mengubah harga, TAPI berikan validasi: Tidak boleh di bawah harga_jual_min dari master produk.
+
+        Kalkulasi otomatis Total Amount.
+
+    Repository (TransactionRepository - SANGAT KRUSIAL): Buat fungsi checkout(). Fungsi ini harus melakukan proses batch/transaksi ke Supabase:
+
+        Generate invoice_no dengan format: INV-YYYYMMDD-XXXX (XXXX adalah angka acak/sequence).
+
+        Insert ke tabel transactions: masukkan total_amount, amount_paid, change_amount, dll.
+
+        Insert ke tabel transaction_items: Ambil ID dari transaksi di atas. Lakukan snapshot harga_modal_aktual (dari harga_modal_terakhir produk) dan harga_jual_aktual (harga final dari kasir). Hitung profit_subtotal.
+
+        Insert ke tabel stock_mutations: Untuk setiap barang yang terjual, catat sebagai barang keluar. Set mutation_type = 'sale'. PENTING: Set qty_in_base menjadi NILAI NEGATIF (misal: -120) agar trigger di database otomatis MENGURANGI stok master.
+
+    UI Utama (lib/presentation/pos/pos_screen.dart):
+
+        Sisi kiri: Daftar produk (hanya yang is_active = true) dengan Search bar (real-time filtering by name/barcode).
+
+        Sisi kanan (atau bottom sheet di mobile): Keranjang belanja, ringkasan total, input nominal bayar, dan kembalian.
+
+        Tombol "Bayar Sekarang" yang memicu checkout().
+
+Pastikan UI sangat responsif karena akan dipakai kasir setiap saat dengan cepat."
