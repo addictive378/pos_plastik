@@ -12,6 +12,7 @@ class CartState extends Equatable {
   final double amountPaid;
   final String paymentMethod; // cash, transfer, qris, credit
   final String? customerId;
+  final String? customerLevel; // ecer, grosir, agen, vip
   final String? notes;
   final TransactionModel? successTransaction;
   final String? errorMessage;
@@ -23,6 +24,7 @@ class CartState extends Equatable {
     this.amountPaid = 0.0,
     this.paymentMethod = 'cash',
     this.customerId,
+    this.customerLevel = 'ecer',
     this.notes,
     this.successTransaction,
     this.errorMessage,
@@ -57,10 +59,12 @@ class CartState extends Equatable {
     double? amountPaid,
     String? paymentMethod,
     String? customerId,
+    String? customerLevel,
     String? notes,
     TransactionModel? successTransaction,
     String? errorMessage,
     bool clearCustomerId = false,
+    bool clearCustomerLevel = false,
     bool clearNotes = false,
     bool clearSuccessTransaction = false,
     bool clearErrorMessage = false,
@@ -72,6 +76,7 @@ class CartState extends Equatable {
       amountPaid: amountPaid ?? this.amountPaid,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       customerId: clearCustomerId ? null : (customerId ?? this.customerId),
+      customerLevel: clearCustomerLevel ? 'ecer' : (customerLevel ?? this.customerLevel),
       notes: clearNotes ? null : (notes ?? this.notes),
       successTransaction: clearSuccessTransaction
           ? null
@@ -89,8 +94,10 @@ class CartState extends Equatable {
         amountPaid,
         paymentMethod,
         customerId,
+        customerLevel,
         notes,
         successTransaction,
         errorMessage,
       ];
 }
+

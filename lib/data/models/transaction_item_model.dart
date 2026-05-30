@@ -72,8 +72,6 @@ class TransactionItemModel extends Equatable {
       'is_price_overridden': isPriceOverridden,
       if (priceOverrideReason != null)
         'price_override_reason': priceOverrideReason,
-      'subtotal': subtotal,
-      'profit_subtotal': profitSubtotal,
     };
   }
 

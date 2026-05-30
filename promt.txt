@@ -1,73 +1,25 @@
-buat issue-pos-kasir.md, untuk planing membuat ini:
+buat issue-harga-bertingkat.md, untuk planing membuat ini:
 
-Tolong implementasikan fitur Sistem Kasir (Point of Sale) menggunakan flutter_bloc berdasarkan skema .agents/rules/supabase_schema.md.
+kembangkan fitur keranjang belanja kasir dengan menambahkan logika Harga Bertingkat Otomatis berdasarkan tabel product_prices.
 
-Lakukan langkah berikut secara berurutan:
+Lakukan langkah berikut:
 
-    Model: Buat CartItemModel (untuk state keranjang lokal), TransactionModel, dan TransactionItemModel.
+    Modifikasi Repository: Tambahkan fungsi getRecommendedPrice(productId, unitId, qty, customerLevel) di repository terkait.
 
-    State Management (CartCubit): Buat Cubit untuk mengatur keranjang. Fitur wajib:
-Tolong buatkan fitur Stok Masuk dari Supplier (Purchase) menggunakan flutter_bloc berdasarkan skema di .agents/rules/supabase_schema.md.
+    Algoritma Pencarian Harga:
 
-Lakukan urutan berikut:
+        Ambil semua data dari product_prices di mana product_id dan unit_id cocok, serta is_active = true.
 
-    Model & Repository: Buat StockMutationModel dan StockMutationRepository. Repository hanya butuh fungsi createPurchaseMutation() untuk melakukan insert ke tabel stock_mutations. Jangan buat fungsi update ke tabel products karena sudah di-handle oleh trigger database.
+        Cari harga grosir (price_type = 'qty_based'): filter yang min_qty <= qty, lalu ambil baris dengan min_qty paling besar.
 
-    State Management: Buat StockMutationCubit (dan state-nya) untuk mengontrol form input.
+        Cari harga khusus pelanggan (price_type = 'customer_level'): filter berdasarkan parameter customerLevel.
 
-    UI Form (lib/presentation/inventory/restock_screen.dart):
+        Bandingkan harga modal grosir, harga pelanggan, dan harga eceran normal (harga_jual_min dari master produk). Kembalikan harga yang paling murah untuk pembeli.
 
-        Buat dropdown/search untuk memilih Produk (Product).
+    Modifikasi State (CartCubit): Setiap kali nilai qty sebuah item di keranjang diubah, panggil fungsi algoritma di atas untuk meng-update harga_acuan_sistem.
 
-        Saat produk dipilih, tampilkan field Read-Only berisi harga_modal_terakhir dan current_stock saat ini.
+    Modifikasi UI (Baris Item di Keranjang):
 
-        Buat dropdown untuk memilih Satuan (ProductUnit) dari produk tersebut.
+        Jika harga yang diterapkan ternyata lebih murah dari harga normal, tampilkan badge/label kecil berwarna hijau di bawah nama item dengan tulisan: "Harga grosir diterapkan" atau "Harga khusus member" (tergantung mana yang menang).
 
-        Buat input qty_original (jumlah barang masuk). Validasi: Harus angka positif.
-
-        Buat input harga_modal_baru (harga beli dari supplier saat ini).
-
-    Logika Kalkulasi Sebelum Insert:
-
-        qty_in_base = qty_original * conversion_to_base dari satuan yang dipilih.
-
-        mutation_type = 'purchase'.
-
-        unit_name_snapshot = unit_name dari satuan yang dipilih.
-
-        harga_modal_lama = harga_modal_terakhir dari produk terpilih.
-
-    Logika UX Pop-up Harga (PENTING):
-
-        Saat tombol Submit ditekan, bandingkan harga. Jika harga_modal_baru > harga_modal_terakhir, jangan langsung insert. Munculkan Dialog Pop-up: "Harga modal naik! Stok akan ditambahkan, namun apakah Anda ingin meninjau ulang Harga Jual sekarang?".
-
-        Jika user klik "Ya", lakukan insert mutasi lalu navigasikan ke halaman edit produk. Jika "Tidak", lakukan insert mutasi dan tutup halaman.
-
-Pastikan desainnya rapi dan error handling (misal form kosong) tertangani."
-        Tambah produk ke keranjang.
-
-        Pilih/ubah satuan (Unit) di dalam keranjang. Saat satuan diubah, otomatis kalkulasi harga_acuan_sistem.
-
-        Override Harga Manual: Kasir bisa mengubah harga, TAPI berikan validasi: Tidak boleh di bawah harga_jual_min dari master produk.
-
-        Kalkulasi otomatis Total Amount.
-
-    Repository (TransactionRepository - SANGAT KRUSIAL): Buat fungsi checkout(). Fungsi ini harus melakukan proses batch/transaksi ke Supabase:
-
-        Generate invoice_no dengan format: INV-YYYYMMDD-XXXX (XXXX adalah angka acak/sequence).
-
-        Insert ke tabel transactions: masukkan total_amount, amount_paid, change_amount, dll.
-
-        Insert ke tabel transaction_items: Ambil ID dari transaksi di atas. Lakukan snapshot harga_modal_aktual (dari harga_modal_terakhir produk) dan harga_jual_aktual (harga final dari kasir). Hitung profit_subtotal.
-
-        Insert ke tabel stock_mutations: Untuk setiap barang yang terjual, catat sebagai barang keluar. Set mutation_type = 'sale'. PENTING: Set qty_in_base menjadi NILAI NEGATIF (misal: -120) agar trigger di database otomatis MENGURANGI stok master.
-
-    UI Utama (lib/presentation/pos/pos_screen.dart):
-
-        Sisi kiri: Daftar produk (hanya yang is_active = true) dengan Search bar (real-time filtering by name/barcode).
-
-        Sisi kanan (atau bottom sheet di mobile): Keranjang belanja, ringkasan total, input nominal bayar, dan kembalian.
-
-        Tombol "Bayar Sekarang" yang memicu checkout().
-
-Pastikan UI sangat responsif karena akan dipakai kasir setiap saat dengan cepat."
+Pastikan kalkulasi ini berjalan instan saat qty berubah."

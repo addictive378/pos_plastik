@@ -391,9 +391,31 @@ class _PosScreenState extends State<PosScreen> {
                       style: TextButton.styleFrom(
                           visualDensity: VisualDensity.compact),
                     ),
-                ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: DropdownButtonFormField<String>(
+                value: state.customerLevel ?? 'ecer',
+                decoration: InputDecoration(
+                  labelText: 'Tipe Pembeli',
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'ecer', child: Text('Ecer (Default)')),
+                  DropdownMenuItem(value: 'grosir', child: Text('Grosir')),
+                  DropdownMenuItem(value: 'agen', child: Text('Agen')),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    ctx.read<CartCubit>().updateCustomerLevel(val);
+                  }
+                },
+              ),
+            ),
+            const Divider(),
 
             // Cart items
             Expanded(
@@ -476,7 +498,7 @@ class _PosScreenState extends State<PosScreen> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: ['cash', 'transfer', 'qris', 'credit'].map((m) {
+              children: ['cash'].map((m) {
                 final selected = state.paymentMethod == m;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -1044,6 +1066,34 @@ class _CartItemCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (!item.isPriceOverridden && item.appliedPriceType != AppliedPriceType.normal) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.local_offer_outlined, size: 10, color: Colors.green.shade700),
+                    const SizedBox(width: 4),
+                    Text(
+                      item.appliedPriceType == AppliedPriceType.grosir
+                          ? "Harga grosir diterapkan"
+                          : "Harga khusus member",
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             // Unit selector + qty controls
             Row(
@@ -1243,6 +1293,29 @@ class _CartSheetContent extends StatelessWidget {
           ),
         ),
         const Divider(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: DropdownButtonFormField<String>(
+            value: state.customerLevel ?? 'ecer',
+            decoration: InputDecoration(
+              labelText: 'Tipe Pembeli',
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              isDense: true,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'ecer', child: Text('Ecer (Default)')),
+              DropdownMenuItem(value: 'grosir', child: Text('Grosir')),
+              DropdownMenuItem(value: 'agen', child: Text('Agen')),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                context.read<CartCubit>().updateCustomerLevel(val);
+              }
+            },
+          ),
+        ),
+        const Divider(),
         // Items
         Expanded(
           child: state.cartItems.isEmpty
@@ -1325,7 +1398,7 @@ class _SheetPaymentSection extends StatelessWidget {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: ['cash', 'transfer', 'qris', 'credit'].map((m) {
+              children: ['cash'].map((m) {
                 final selected = state.paymentMethod == m;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),

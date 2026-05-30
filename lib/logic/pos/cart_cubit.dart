@@ -2,21 +2,107 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/models/cart_item_model.dart';
 import '../../data/models/product_model.dart';
+import '../../data/models/product_price_model.dart';
 import '../../data/models/product_unit_model.dart';
 import '../../data/models/transaction_item_model.dart';
+import '../../data/repositories/product_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
 import 'cart_state.dart';
 
 /// Manages the POS shopping cart and checkout lifecycle.
 class CartCubit extends Cubit<CartState> {
   final TransactionRepository _transactionRepository;
+  final ProductRepository _productRepository;
 
   CartCubit({
     required TransactionRepository transactionRepository,
+    required ProductRepository productRepository,
   })  : _transactionRepository = transactionRepository,
+        _productRepository = productRepository,
         super(const CartState());
 
   // ── Cart manipulation ──────────────────────────────────────────────────
+
+  /// Helper to calculate the recommended price and identify which price type wins.
+  CartItemModel _calculateItemPrice(CartItemModel item, double newQty, ProductUnitModel newUnit) {
+    // Call the price recommendation algorithm in the repository
+    final recommendedPrice = _productRepository.getRecommendedPrice(
+      item.product,
+      newUnit.id!,
+      newQty,
+      state.customerLevel,
+    );
+
+    final normalPrice = item.product.hargaJualMin * newUnit.conversionToBase;
+
+    // Determine the applied price type (normal, grosir, or customer level)
+    AppliedPriceType type = AppliedPriceType.normal;
+    if (recommendedPrice < normalPrice) {
+      final activePrices = item.product.prices
+          .where((p) => p.unitId == newUnit.id && p.isActive)
+          .toList();
+
+      ProductPriceModel? winGrosir;
+      for (final price in activePrices) {
+        if (price.priceType == 'qty_based' && price.minQty <= newQty) {
+          if (winGrosir == null || price.minQty > winGrosir.minQty) {
+            winGrosir = price;
+          }
+        }
+      }
+
+      ProductPriceModel? winCustomer;
+      if (state.customerLevel != null && state.customerLevel!.isNotEmpty) {
+        for (final price in activePrices) {
+          if (price.priceType == 'customer_level' &&
+              price.customerLevel == state.customerLevel) {
+            winCustomer = price;
+            break;
+          }
+        }
+      }
+
+      if (winCustomer != null && recommendedPrice == winCustomer.hargaJual) {
+        type = AppliedPriceType.customerLevel;
+      } else if (winGrosir != null && recommendedPrice == winGrosir.hargaJual) {
+        type = AppliedPriceType.grosir;
+      }
+    }
+
+    // Handle price override logic
+    double newActualPrice = recommendedPrice;
+    bool overridden = item.isPriceOverridden;
+    String? reason = item.priceOverrideReason;
+
+    if (overridden) {
+      // Keep manual override if it's at least the minimum allowed price (normalPrice)
+      if (item.hargaJualAktual >= normalPrice) {
+        newActualPrice = item.hargaJualAktual;
+      } else {
+        overridden = false;
+        reason = null;
+      }
+    }
+
+    return item.copyWith(
+      unit: newUnit,
+      qty: newQty,
+      hargaAcuanSistem: recommendedPrice,
+      hargaJualAktual: newActualPrice,
+      isPriceOverridden: overridden,
+      priceOverrideReason: reason,
+      appliedPriceType: type,
+    );
+  }
+
+  /// Update customer level and recalculate all cart item prices.
+  void updateCustomerLevel(String level) {
+    emit(state.copyWith(customerLevel: level));
+    final updatedList = state.cartItems.map((item) {
+      return _calculateItemPrice(item, item.qty, item.unit);
+    }).toList();
+    emit(state.copyWith(cartItems: updatedList));
+  }
 
   /// Add a product to the cart (qty +1 if already present).
   void addToCart(ProductModel product) {
@@ -24,9 +110,9 @@ class CartCubit extends Cubit<CartState> {
         state.cartItems.indexWhere((item) => item.product.id == product.id);
 
     if (existingIndex >= 0) {
-      // Already in cart → increment qty
+      // Already in cart → increment qty and recalculate
       final existing = state.cartItems[existingIndex];
-      final updated = existing.copyWith(qty: existing.qty + 1);
+      final updated = _calculateItemPrice(existing, existing.qty + 1, existing.unit);
       final list = List<CartItemModel>.from(state.cartItems)
         ..[existingIndex] = updated;
       emit(state.copyWith(cartItems: list));
@@ -43,15 +129,14 @@ class CartCubit extends Cubit<CartState> {
       orElse: () => sellableUnits.first,
     );
 
-    final systemPrice = product.hargaJualMin * defaultUnit.conversionToBase;
-
-    final newItem = CartItemModel(
+    final dummyItem = CartItemModel(
       product: product,
       unit: defaultUnit,
       qty: 1.0,
-      hargaAcuanSistem: systemPrice,
-      hargaJualAktual: systemPrice,
+      hargaAcuanSistem: 0.0,
+      hargaJualAktual: 0.0,
     );
+    final newItem = _calculateItemPrice(dummyItem, 1.0, defaultUnit);
 
     emit(state.copyWith(
       cartItems: List<CartItemModel>.from(state.cartItems)..add(newItem),
@@ -68,7 +153,8 @@ class CartCubit extends Cubit<CartState> {
   /// Update the quantity for a cart item.
   void updateQty(int index, double newQty) {
     if (index < 0 || index >= state.cartItems.length || newQty <= 0) return;
-    final updated = state.cartItems[index].copyWith(qty: newQty);
+    final item = state.cartItems[index];
+    final updated = _calculateItemPrice(item, newQty, item.unit);
     final list = List<CartItemModel>.from(state.cartItems)..[index] = updated;
     emit(state.copyWith(cartItems: list));
   }
@@ -77,32 +163,7 @@ class CartCubit extends Cubit<CartState> {
   void changeUnit(int index, ProductUnitModel newUnit) {
     if (index < 0 || index >= state.cartItems.length) return;
     final item = state.cartItems[index];
-
-    final newSystemPrice =
-        item.product.hargaJualMin * newUnit.conversionToBase;
-
-    // If price was overridden, keep it unless it is now below the new minimum.
-    double newActualPrice = newSystemPrice;
-    bool overridden = false;
-    String? reason;
-
-    if (item.isPriceOverridden) {
-      if (item.hargaJualAktual >= newSystemPrice) {
-        newActualPrice = item.hargaJualAktual;
-        overridden = true;
-        reason = item.priceOverrideReason;
-      }
-      // else: old override is invalid → fall back to system price
-    }
-
-    final updated = item.copyWith(
-      unit: newUnit,
-      hargaAcuanSistem: newSystemPrice,
-      hargaJualAktual: newActualPrice,
-      isPriceOverridden: overridden,
-      priceOverrideReason: reason,
-    );
-
+    final updated = _calculateItemPrice(item, item.qty, newUnit);
     final list = List<CartItemModel>.from(state.cartItems)..[index] = updated;
     emit(state.copyWith(cartItems: list));
   }
@@ -141,6 +202,7 @@ class CartCubit extends Cubit<CartState> {
     emit(state.copyWith(cartItems: list));
     return true;
   }
+
 
   // ── Payment fields ─────────────────────────────────────────────────────
 

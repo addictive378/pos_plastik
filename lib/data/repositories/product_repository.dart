@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/product_model.dart';
+import '../models/product_price_model.dart';
 import '../models/product_unit_model.dart';
 
 class ProductRepository {
@@ -23,7 +24,7 @@ class ProductRepository {
     // no longer exposes filter methods like .eq() / .ilike().
     var query = _client
         .from('products')
-        .select('*, product_units(*)')
+        .select('*, product_units(*), product_prices(*)')
         .eq('owner_id', _ownerId);
 
     if (isActive != null) {
@@ -54,7 +55,7 @@ class ProductRepository {
     final productResponse = await _client
         .from('products')
         .insert(productJson)
-        .select('*, product_units(*)')
+        .select('*, product_units(*), product_prices(*)')
         .single();
 
     final newProductId = productResponse['id'] as String;
@@ -69,7 +70,7 @@ class ProductRepository {
     // Re-fetch the product with units to return the complete object
     final completeProduct = await _client
         .from('products')
-        .select('*, product_units(*)')
+        .select('*, product_units(*), product_prices(*)')
         .eq('id', newProductId)
         .single();
 
@@ -101,7 +102,7 @@ class ProductRepository {
     // Re-fetch the complete product
     final completeProduct = await _client
         .from('products')
-        .select('*, product_units(*)')
+        .select('*, product_units(*), product_prices(*)')
         .eq('id', productId)
         .single();
 
@@ -114,5 +115,65 @@ class ProductRepository {
     // Delete units first (in case no cascade)
     await _client.from('product_units').delete().eq('product_id', productId);
     await _client.from('products').delete().eq('id', productId);
+  }
+
+  /// Find the recommended price based on tiered pricing and customer level.
+  double getRecommendedPrice(
+    ProductModel product,
+    String unitId,
+    double qty,
+    String? customerLevel,
+  ) {
+    // 1. Find conversion rate for the unit
+    final unit = product.units.firstWhere(
+      (u) => u.id == unitId,
+      orElse: () => ProductUnitModel(
+        id: unitId,
+        unitName: product.baseUnit,
+        conversionToBase: 1.0,
+      ),
+    );
+    final conversionToBase = unit.conversionToBase;
+
+    // 2. Normal retail price
+    final normalPrice = product.hargaJualMin * conversionToBase;
+
+    // Filter price tiers for this unit
+    final activePrices = product.prices
+        .where((p) => p.unitId == unitId && p.isActive)
+        .toList();
+
+    // 3. Wholesale price (qty_based): min_qty <= qty, take the largest min_qty
+    ProductPriceModel? bestQtyPrice;
+    for (final price in activePrices) {
+      if (price.priceType == 'qty_based' && price.minQty <= qty) {
+        if (bestQtyPrice == null || price.minQty > bestQtyPrice.minQty) {
+          bestQtyPrice = price;
+        }
+      }
+    }
+
+    // 4. Customer-specific price (customer_level): matches customerLevel
+    ProductPriceModel? bestCustomerPrice;
+    if (customerLevel != null && customerLevel.isNotEmpty) {
+      for (final price in activePrices) {
+        if (price.priceType == 'customer_level' &&
+            price.customerLevel == customerLevel) {
+          bestCustomerPrice = price;
+          break;
+        }
+      }
+    }
+
+    // Compare and return the cheapest price
+    double recommendedPrice = normalPrice;
+    if (bestQtyPrice != null && bestQtyPrice.hargaJual < recommendedPrice) {
+      recommendedPrice = bestQtyPrice.hargaJual;
+    }
+    if (bestCustomerPrice != null && bestCustomerPrice.hargaJual < recommendedPrice) {
+      recommendedPrice = bestCustomerPrice.hargaJual;
+    }
+
+    return recommendedPrice;
   }
 }
