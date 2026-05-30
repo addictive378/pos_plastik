@@ -39,16 +39,18 @@ class ProductCubit extends Cubit<ProductState> {
     emit(state.copyWith(activeFilter: filter));
   }
 
-  /// Create a new product with its units.
+  /// Create a new product with its units and price rules.
   Future<void> createProduct({
     required ProductModel product,
     required List<ProductUnitModel> units,
+    List<Map<String, dynamic>> priceRules = const [],
   }) async {
     emit(state.copyWith(status: ProductStatus.loading));
     try {
       final newProduct = await _productRepository.createProduct(
         product: product,
         units: units,
+        priceRules: priceRules,
       );
       final updatedProducts = [newProduct, ...state.products];
       emit(state.copyWith(
@@ -63,11 +65,12 @@ class ProductCubit extends Cubit<ProductState> {
     }
   }
 
-  /// Update an existing product and its units.
+  /// Update an existing product and its units and price rules.
   Future<void> updateProduct({
     required String productId,
     required ProductModel product,
     required List<ProductUnitModel> units,
+    List<Map<String, dynamic>> priceRules = const [],
   }) async {
     emit(state.copyWith(status: ProductStatus.loading));
     try {
@@ -75,6 +78,7 @@ class ProductCubit extends Cubit<ProductState> {
         productId: productId,
         product: product,
         units: units,
+        priceRules: priceRules,
       );
       final updatedProducts = state.products.map((p) {
         return p.id == productId ? updatedProduct : p;

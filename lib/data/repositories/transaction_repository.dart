@@ -56,7 +56,7 @@ class TransactionRepository {
       'change_amount': changeAmount,
       'payment_method': paymentMethod,
       'status': 'completed',
-      if (customerId != null) 'customer_id': customerId,
+      'customer_id': null,
       if (notes != null) 'notes': notes,
     };
 

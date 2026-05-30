@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 import 'product_model.dart';
 import 'product_unit_model.dart';
 
+enum AppliedPriceType { normal, grosir, customerLevel }
+
 /// Represents a single item in the POS shopping cart.
 ///
 /// This is a local, in-memory model — it is not directly persisted to the
@@ -21,6 +23,9 @@ class CartItemModel extends Equatable {
   final bool isPriceOverridden;
   final String? priceOverrideReason;
 
+  /// The type of tiered pricing currently applied.
+  final AppliedPriceType appliedPriceType;
+
   const CartItemModel({
     required this.product,
     required this.unit,
@@ -29,6 +34,7 @@ class CartItemModel extends Equatable {
     required this.hargaJualAktual,
     this.isPriceOverridden = false,
     this.priceOverrideReason,
+    this.appliedPriceType = AppliedPriceType.normal,
   });
 
   /// Line total for this cart item.
@@ -45,6 +51,7 @@ class CartItemModel extends Equatable {
     double? hargaJualAktual,
     bool? isPriceOverridden,
     String? priceOverrideReason,
+    AppliedPriceType? appliedPriceType,
   }) {
     return CartItemModel(
       product: product ?? this.product,
@@ -54,6 +61,7 @@ class CartItemModel extends Equatable {
       hargaJualAktual: hargaJualAktual ?? this.hargaJualAktual,
       isPriceOverridden: isPriceOverridden ?? this.isPriceOverridden,
       priceOverrideReason: priceOverrideReason ?? this.priceOverrideReason,
+      appliedPriceType: appliedPriceType ?? this.appliedPriceType,
     );
   }
 
@@ -66,5 +74,7 @@ class CartItemModel extends Equatable {
         hargaJualAktual,
         isPriceOverridden,
         priceOverrideReason,
+        appliedPriceType,
       ];
 }
+

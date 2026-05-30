@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import 'product_price_model.dart';
 import 'product_unit_model.dart';
 
 class ProductModel extends Equatable {
@@ -22,6 +23,9 @@ class ProductModel extends Equatable {
   /// Related product units (populated via join or separate query).
   final List<ProductUnitModel> units;
 
+  /// Related tiered prices (populated via join with `product_prices`).
+  final List<ProductPriceModel> prices;
+
   const ProductModel({
     this.id,
     required this.ownerId,
@@ -39,6 +43,7 @@ class ProductModel extends Equatable {
     this.createdAt,
     this.updatedAt,
     this.units = const [],
+    this.prices = const [],
   });
 
   /// Create from Supabase JSON row.
@@ -46,6 +51,7 @@ class ProductModel extends Equatable {
   /// containing a list of unit JSON objects.
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     final unitsList = json['product_units'] as List<dynamic>?;
+    final pricesList = json['product_prices'] as List<dynamic>?;
     return ProductModel(
       id: json['id'] as String?,
       ownerId: json['owner_id'] as String,
@@ -74,6 +80,12 @@ class ProductModel extends Equatable {
           ? unitsList
               .map((e) =>
                   ProductUnitModel.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : [],
+      prices: pricesList != null
+          ? pricesList
+              .map((e) =>
+                  ProductPriceModel.fromJson(e as Map<String, dynamic>))
               .toList()
           : [],
     );
@@ -131,6 +143,7 @@ class ProductModel extends Equatable {
     DateTime? createdAt,
     DateTime? updatedAt,
     List<ProductUnitModel>? units,
+    List<ProductPriceModel>? prices,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -149,6 +162,7 @@ class ProductModel extends Equatable {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       units: units ?? this.units,
+      prices: prices ?? this.prices,
     );
   }
 
@@ -170,5 +184,6 @@ class ProductModel extends Equatable {
         createdAt,
         updatedAt,
         units,
+        prices,
       ];
 }

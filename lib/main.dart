@@ -69,6 +69,8 @@ class MyApp extends StatelessWidget {
             create: (context) => CartCubit(
               transactionRepository:
                   context.read<TransactionRepository>(),
+              productRepository:
+                  context.read<ProductRepository>(),
             ),
           ),
         ],
